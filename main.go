@@ -28,6 +28,7 @@ type ConfigsModel struct {
 	FieldValue       string
 }
 
+// Cookie ...
 type Cookie struct {
 	Session struct {
 		Name 	string `json:"name"`
@@ -61,7 +62,7 @@ func createCookie(configs ConfigsModel, body []byte) (*Cookie, error) {
 		"username": configs.JiraUsername,
 		"password": configs.JiraPassword,
 	}
-	cookiePayload, _ := json.Marshal(payload)
+	cookiePayload, err := json.Marshal(payload)
 
 	requestURL := fmt.Sprintf("%s/rest/auth/latest/session", configs.JiraInstanceURL)
 	request, err := http.NewRequest("POST", requestURL, bytes.NewBuffer(cookiePayload))
@@ -75,7 +76,12 @@ func createCookie(configs ConfigsModel, body []byte) (*Cookie, error) {
 	client := http.Client{}
 	response, err := client.Do(request)
 
-	defer response.Body.Close()
+	defer func() {
+		err := response.Body.Close()
+		if err != nil {
+			log.Warnf("Failed to close response body, error: %s", err)
+		}
+	}()
 	responseBody, err := ioutil.ReadAll(response.Body)
 
 	var cookie = new(Cookie)
