@@ -28,8 +28,22 @@ type ConfigsModel struct {
 	FieldValue       string
 }
 
+type Cookie struct {
+	Session struct {
+		Name 	string `json:"name"`
+		Value 	string `json:"value"`
+	} `json:"session"`
+	LoginInfo struct {
+		FailedLoginCount 	int `json:"failedLoginCount"`
+		LoginCount 			int `json:"loginCount"`
+		LastFailedLoginTime string `json:"lastFailedLoginTime"`
+		PreviousLoginTime 	string `json:"previousLoginTime"`
+	} `json:"loginInfo"`
+}
+
 func main() {
 	configs := createConfigsModelFromEnvs()
+
 	configs.dump()
 	if err := configs.validate(); err != nil {
 		log.Errorf("Issue with input: %s", err)
@@ -40,6 +54,38 @@ func main() {
 		log.Errorf("Could not update issue, error: %s", err)
 		os.Exit(2)
 	}
+}
+
+func createCookie(configs ConfigsModel, body []byte) (*Cookie, error) {
+	payload := map[string]interface{}{
+		"username": configs.JiraUsername,
+		"password": configs.JiraPassword,
+	}
+	cookiePayload, _ := json.Marshal(payload)
+
+	requestURL := fmt.Sprintf("%s/rest/auth/latest/session", configs.JiraInstanceURL)
+	request, err := http.NewRequest("POST", requestURL, bytes.NewBuffer(cookiePayload))
+	if err != nil {
+		return nil, err
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+
+	client := http.Client{}
+	response, err := client.Do(request)
+
+	defer response.Body.Close()
+	responseBody, err := ioutil.ReadAll(response.Body)
+
+	var cookie = new(Cookie)
+	err = json.Unmarshal(responseBody, &cookie)
+
+	if err != nil {
+		return cookie , err
+	}
+
+	return cookie, err
 }
 
 func createRequestBody(configs ConfigsModel) ([]byte, error) {
@@ -58,9 +104,15 @@ func createRequest(configs ConfigsModel, issueIDOrKey string, body []byte) (*htt
 		return request, err
 	}
 
-	request.SetBasicAuth(configs.JiraUsername, configs.JiraPassword)
+	cookie, err := createCookie(configs, body)
+	if err != nil {
+		return request, err
+	}
+
+	cookieVal := cookie.Session.Name + "=" + cookie.Session.Value
+
+	request.Header.Set("Cookie", cookieVal)
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
 	return request, nil
 }
 
